@@ -1,0 +1,46 @@
+# 虚拟环境
+.venv/
+.venv1/
+venv/
+env/
+
+# Python 缓存
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 测试/类型检查/打包缓存
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+build/
+dist/
+*.egg-info/
+
+# PyCharm 配置
+.idea/
+*.iml
+
+# VS Code
+.vscode/
+
+# 数据文件（CSV）
+*.csv
+
+# 输出图片
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+
+# 日志
+*.log
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 环境变量
+.env
