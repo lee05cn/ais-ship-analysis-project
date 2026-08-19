@@ -1,0 +1,130 @@
+AIS船舶轨迹分析与船‑船会遇风险检测项目
+实习项目 | Python | 基于AIS数据完成预处理、轨迹聚类挖掘主航道、DCPA‑TCPA船只会遇风险研判
+
+项目简介
+本项目针对海上AIS船舶自动识别系统数据，实现一套完整数据分析流水线：
+1. AIS数据预处理：筛选在航船舶、剔除飞点与静止船舶，清洗原始AIS报文；
+2. 轨迹重采样与航线聚类：对非均匀时间间隔AIS轨迹做等时间重采样，使用HDBSCAN密度聚类挖掘海域主流通航航道，识别异常/偏离航道船舶；
+3. 船舶会遇风险检测：基于DCPA（最近会遇距离）、TCPA（最近会遇时间）航海模型，批量计算船舶两两之间碰撞会遇风险，输出风险候选对；
+
+适用场景：海上航道分析、船舶会遇风险评估、实习数据分析作业。
+模型假设：DCPA/TCPA计算假设船舶保持当前航速航向匀速直线航行，做短期风险预估。
+
+项目目录结构
+PythonProject2/
+├─ ais_preprocess.py              # AIS简易预处理脚本（航行状态过滤、飞点剔除）
+├─ trajectory_cluster_route.py    # 轨迹重采样 + HDBSCAN航线聚类
+├─ encounter_detect_cluster.py    # DCPA‑TCPA 船只会遇风险检测
+├─ main_run.py                    # 总调度入口：一键执行聚类与会遇检测
+├─ ais_preprocessed_result.csv    # 【输入】预处理完成后的AIS数据
+├─ route_cluster.png              # 【输出】航线聚类可视化图片
+├─ trajectory_cluster_result.csv  # 【输出】每艘船聚类标签、轨迹统计特征
+└─ encounter_risk.csv            # 【输出】会遇候选对、DCPA、TCPA、风险标记
+
+环境依赖
+Python >=3.9
+安装命令：
+pip install pandas numpy matplotlib scikit‑learn hdbscan
+
+数据说明
+输入数据 ais_preprocessed_result.csv
+字段说明：
+Timestamp        AIS报文接收时间(UTC时间)
+MMSI            船舶唯一识别号
+Latitude / Longitude  纬度、经度
+SOG             对地航速，单位：节
+COG             对地航向，单位：度
+ROT             转向速率
+Navigational status 航行状态
+
+数据来源：AIS原始报文，已经过简易预处理脚本过滤，仅保留在航状态船舶。
+
+使用运行步骤
+步骤1：数据准备
+将清洗完毕的AIS文件命名为 ais_preprocessed_result.csv，放在项目根目录。
+
+步骤2：运行整套流水线
+方式一：运行总入口脚本
+python main_run.py
+
+执行顺序：
+1. 执行轨迹聚类，输出航线图 route_cluster.png 和 trajectory_cluster_result.csv
+2. 执行时空候选筛选 + DCPA‑TCPA会遇计算，输出 encounter_risk.csv
+
+方式二：模块单独运行
+# 只做航线聚类
+python trajectory_cluster_route.py
+
+# 只做船只会遇风险检测
+python encounter_detect_cluster.py
+
+模块详细说明
+1. ais_preprocess.py 简易预处理脚本
+功能：
+1. 读取原始AIS csv，清理列名空格；
+2. 根据Navigational status筛选8类在航船舶，剔除锚泊、系泊船舶；
+3. 剔除全程静止船舶、跳变飞点；
+4. 输出清洗完成 ais_preprocessed_result.csv。
+
+2. trajectory_cluster_route.py 轨迹航线聚类
+实现：基于轨迹中心点HDBSCAN空间密度聚类挖掘主航道
+处理流程：
+1. 数据清洗，过滤关键字段为空的记录；
+2. 按MMSI分组，单船轨迹重采样为3分钟等时间间隔，线性插值补齐缺失点位；
+3. 计算每艘船舶轨迹几何中心点（mean_lat, mean_lon）；
+4. 使用中心点经纬度做HDBSCAN密度聚类；
+    - cluster_id = -1：噪声，偏离主航道的船舶；
+    - cluster_id = 0,1,2…：不同主航道簇编号；
+5. 可视化输出航线分布图，输出船舶统计特征+聚类标签csv。
+
+参数调参位置
+cluster = hdbscan.HDBSCAN(min_cluster_size=8, min_samples=4)
+min_cluster_size：一个航道簇最少船舶数量，调小分出更多细分航道，调大合并小分支航道。
+
+局限：仅使用整条轨迹中心点聚类，不能区分同航道上行/下行往返船舶；
+进阶方案可使用DTW动态时间规整做完整时序轨迹相似度聚类。
+
+3. encounter_detect_cluster.py 船只会遇检测
+核心指标：DCPA 最近会遇距离，TCPA 到最近会遇点时间
+判定逻辑（代码内阈值可自行修改）：
+1. TCPA>0：代表会遇发生在未来（已经相互远离的直接排除）
+2. DCPA小于安全距离阈值(默认0.5海里)
+3. TCPA小于预警时间阈值(默认10分钟)
+全部满足标记为高风险会遇对。
+
+输出文件 encounter_risk.csv 字段：
+time_window     时间窗口
+mmsi_1 / mmsi_2 两艘船舶MMSI
+dcpa_nm         最近会遇距离(海里)
+tcpa_min        到达最近会遇点时间(分钟)
+risk_flag       True=高风险会遇；False=无风险
+
+注意：DCPA‑TCPA模型假设船舶航向航速保持不变，属于短期风险预估。
+
+输出产物介绍
+1. route_cluster.png：航线聚类可视化图；灰色=噪声异常船舶，不同彩色代表不同主航道簇；
+2. trajectory_cluster_result.csv：每艘船MMSI、轨迹中心点、航程、平均航速、所属航道cluster_id；
+3. encounter_risk.csv：时间窗口下全部船舶候选对，DCPA/TCPA与风险标记。
+
+常见问题 FAQ
+1. Q：聚类出来大部分船舶为一个大簇？
+A：代表数据里船舶地理上集中在少数几条主航道；可调小min_cluster_size尝试拆分细分航道。
+
+2. Q：encounter_risk.csv为空？
+A：该时间窗口内，没有两艘及以上船舶空间靠近；需要有多船同时航行重叠的AIS数据，才会产生会遇候选对。
+
+3. Q：运行出现FutureWarning警告？
+A：属于pandas版本提示，不是致命错误，不影响计算结果；红色Traceback才代表程序崩溃。
+
+4. Q：DCPA/TCPA阈值怎么修改？
+A：在encounter_detect_cluster.py的run_encounter_detect()入参修改：
+dcpa_thresh_nm安全距离，tcpa_thresh_min预警时间。
+
+项目拓展方向（报告可以写的改进点）
+1. 使用DTW动态时间规整实现完整时序轨迹相似度聚类，区分航道上行、下行；
+2. 绘制海域通航热力图，统计各航道船舶通行频次；
+3. 根据COLREGs国际海上避碰规则，在DCPA‑TCPA基础上增加会遇态势识别（对遇/交叉相遇/追越）；
+4. 增加会遇风险等级分级（高、中、低风险）。
+
+项目作者
+实习数据分析项目
