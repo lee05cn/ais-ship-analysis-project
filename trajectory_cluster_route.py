@@ -3,7 +3,7 @@
 trajectory_cluster_route.py
 Function: AIS trajectory HDBSCAN clustering, mine main sea routes, output visualization image
 Input: ais_preprocessed_result.csv
-Output: route_cluster.png , trajectory_cluster_result.csv
+Output: route_cluster.png , trajectory_cluster_result.csv, cluster_detail_plots/ 单簇细节图文件夹
 Note: Only use trajectory center point(lat/lon) for spatial clustering.
 """
 import pandas as pd
@@ -11,6 +11,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.preprocessing import StandardScaler
 import hdbscan
+import os  # 新增：用于创建单簇图保存文件夹
 
 
 def haversine(lat1, lon1, lat2, lon2):
@@ -99,6 +100,7 @@ def run_trajectory_cluster(csv_path: str = "ais_preprocessed_result.csv"):
     print("\n==== Cluster Statistics ====")
     print(feat_df["cluster_id"].value_counts().sort_index())
 
+    # ========== 原有总览图（不变） ==========
     plt.figure(figsize=(12,7), dpi=120)
     noise_flag = True
     for cid in sorted(feat_df["cluster_id"].unique()):
@@ -119,6 +121,42 @@ def run_trajectory_cluster(csv_path: str = "ais_preprocessed_result.csv"):
     plt.savefig("route_cluster.png", bbox_inches="tight")
     plt.close()
     print("Image saved: route_cluster.png")
+
+    # ========== 新增：生成单航道簇精细化轨迹图 ==========
+    output_folder = "cluster_detail_plots"
+    os.makedirs(output_folder, exist_ok=True)
+
+    valid_clusters = sorted([cid for cid in feat_df["cluster_id"].unique() if cid != -1])
+
+    for cid in valid_clusters:
+        cluster_mmsis = feat_df[feat_df["cluster_id"] == cid]["MMSI"].tolist()
+        ship_count = len(cluster_mmsis)
+
+        plt.figure(figsize=(12, 8), dpi=120)
+
+        for mmsi in cluster_mmsis:
+            ship_traj = df_res[df_res["MMSI"] == mmsi].sort_values("Timestamp")
+            plt.plot(
+                ship_traj["Longitude"],
+                ship_traj["Latitude"],
+                color="#1f77b4",
+                linewidth=0.8,
+                alpha=0.7
+            )
+
+        plt.title(f"Route Cluster {cid} Trajectory Detail\nVessel Count: {ship_count}", fontsize=14, pad=12)
+        plt.xlabel("Longitude", fontsize=12)
+        plt.ylabel("Latitude", fontsize=12)
+        plt.grid(True, alpha=0.3, linestyle="--")
+        plt.gca().set_aspect("equal", adjustable="box")
+
+        save_path = os.path.join(output_folder, f"route_cluster_{cid}_detail.png")
+        plt.tight_layout()
+        plt.savefig(save_path, bbox_inches="tight", dpi=150)
+        plt.close()
+        print(f"Cluster {cid} detail image saved: {save_path}")
+
+    print(f"\nAll cluster detail images saved in folder: ./{output_folder}/")
 
     feat_df.to_csv("trajectory_cluster_result.csv", index=False, encoding="utf-8-sig")
     print("Cluster result table saved: trajectory_cluster_result.csv")
